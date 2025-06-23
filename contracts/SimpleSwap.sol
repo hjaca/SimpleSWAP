@@ -22,13 +22,14 @@ pragma solidity >=0.7.0 <0.9.0;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Math} "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract SimpleSwap is Ownable {
     /// @notice Token A in the liquidity pool
-    IERC20 public tokenA;
+    ERC20 public tokenA;
 
     /// @notice Token B in the liquidity pool
-    IERC20 public tokenB;
+    ERC20 public tokenB;
 
     /// @notice Emitted when liquidity is added
     /// @param amountA The amount of token A added
