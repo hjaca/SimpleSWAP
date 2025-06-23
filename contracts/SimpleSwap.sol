@@ -8,16 +8,13 @@ pragma solidity >=0.7.0 <0.9.0;
  *  calculate amounts to receive, replicating the functionality of Uniswap without depending on its protocol.
  *  Kipu Eth course TP3 - Hugo Jaca
  * Functions:
- *      Constructor. Inicializa la subasta con los parámetros necesario para su funcionamiento.
- *      Función para ofertar: Permite a los participantes ofertar por el artículo. Para que una oferta sea válida debe ser mayor que la mayor oferta actual al menos en 5% y debe realizarse mientras la subasta esté activa.
- *      Mostrar ganador: Muestra el ofertante ganador y el valor de la oferta ganadora.
- *      Mostrar ofertas: Muestra la lista de ofertantes y los montos ofrecidos.
- *      Devolver depósitos: Al finalizar la subasta se devuelve el depósito a los ofertantes que no ganaron, descontando una comisión del 2% para el gas.
- * Manejo de depósitos:
- *      Las ofertas se depositan en el contrato y se almacenan con las direcciones de los ofertantes.
+ *      Constructor: initialize contract and parameters.
+ *      
+ * 
  * Eventos:
- *      Nueva Oferta: Se emite cuando se realiza una nueva oferta.
- *      Subasta Finalizada: Se emite cuando finaliza la subasta.
+ *      event LiquidityAdded
+ *      event LiquidityRemoved
+ *      event TokenSwapped
  */
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -25,50 +22,98 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Math} "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract SimpleSwap is Ownable {
-    /// @notice Token A in the liquidity pool
+    // Token A in the liquidity pool
     ERC20 public tokenA;
 
-    /// @notice Token B in the liquidity pool
+    // Token B in the liquidity pool
     ERC20 public tokenB;
 
-    /// @notice Emitted when liquidity is added
-    /// @param amountA The amount of token A added
-    /// @param amountB The amount of token B added
+    // @notice Emitted when liquidity is added
+    // @param amountA The amount of token A added
+    // @param amountB The amount of token B added
     event LiquidityAdded(uint256 amountA, uint256 amountB);
     
-    /// @notice Emitted when liquidity is removed
-    /// @param amountA The amount of token A removed
-    /// @param amountB The amount of token B removed
+    // @notice Emitted when liquidity is removed
+    // @param amountA The amount of token A removed
+    // @param amountB The amount of token B removed
     event LiquidityRemoved(uint256 amountA, uint256 amountB);
 
-    /// @notice Emitted when a token swap occurs
-    /// @param user The address of the user performing the swap
-    /// @param amountIn The input token amount
-    /// @param amountOut The output token amount
+    // @notice Emitted when a token swap occurs
+    // @param user The address of the user performing the swap
+    // @param amountIn The input token amount
+    // @param amountOut The output token amount
     event TokenSwapped(address indexed user, uint256 amountIn, uint256 amountOut);
 
+    // @errors
+    error INSUFFICIENT_LIQUIDITY();
 
-// 1️⃣Agregar Liquidez (addLiquidity)
-// Description: Function for users to add liquidity to a token pair in an ERC-20 pool.
-// Interface: function addLiquidity(address tokenA, address tokenB, uint amountADesired, uint amountBDesired, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB, uint liquidity);
-// Tasks:
-// Transfer tokens from the user to the contract.
-// Calculate and allocate liquidity based on reserves.
-// Issue liquidity tokens to the user.
-// Parameters:
-// tokenA, tokenB: Token addresses.
-// amountADesired, amountBDesired: Desired token amounts.
-// amountAMin, amountBMin: Minimum acceptable amounts to avoid failures.
-// to: Recipient address.
-// deadline: Timestamp for the transaction.
-// Returns:
-// amountA, amountB, liquidity: Actual amounts and issued liquidity.
+    // constructor
+    constructor() ERC20("LiquidityToken", "LT") {}
 
-    function addLiquidity(uint256 amountA, uint256 amountB) external onlyOwner {
-        require(amountA > 0 && amountB > 0, "Amounts must be > 0");
-        tokenA.transferFrom(msg.sender, address(this), amountA);
-        tokenB.transferFrom(msg.sender, address(this), amountB);
+    // 1️⃣Agregar Liquidez (addLiquidity)
+    // Description: Function for users to add liquidity to a token pair in an ERC-20 pool.
+    // Interface: function addLiquidity(address tokenA, address tokenB, uint amountADesired, uint amountBDesired, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB, uint liquidity);
+    // Tasks:
+    // Transfer tokens from the user to the contract.
+    // Calculate and allocate liquidity based on reserves.
+    // Issue liquidity tokens to the user.
+    // Parameters:
+    // tokenA, tokenB: Token addresses.
+    // amountADesired, amountBDesired: Desired token amounts.
+    // amountAMin, amountBMin: Minimum acceptable amounts to avoid failures.
+    // to: Recipient address.
+    // deadline: Timestamp for the transaction.
+    // Returns:
+    // amountA, amountB, liquidity: Actual amounts and issued liquidity.
 
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 amountADesired,
+        uint256 amountBDesired,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to,
+        uint256 deadline
+    ) external returns (uint256 amountA, uint256 amountB, uint256 liquidity) {
+        require(block.timestamp <= deadline, "Expired");
+        require(amountA > 0 && amountB > 0, "Amount must be > 0");
+
+        if (tokenAAddres == address(0) && tokenBAddres == address(0)) {
+            require(tokenA != tokenB, "Tokens must differ");
+            tokenAAddres = tokenA;
+            tokenBAddres = tokenB;
+        } else {
+            require(
+                (tokenA == tokenAAddres && tokenB == tokenBAddres) ||
+                (tokenA == tokenBAddres && tokenB == tokenAAddres),
+                "Invalid token pair"
+            );
+        }
+
+        if (totalSupply() == 0) {
+            amountA = amountADesired;
+            amountB = amountBDesired;
+            liquidity = Math.sqrt(amountA * amountB);
+        } else {
+            amountA = amountADesired;
+            amountB = (amountA * reserveB) / reserveA;
+            require(amountB <= amountBDesired, "Too much B");
+            liquidity = (amountA * totalSupply()) / reserveA;
+        }
+
+        require(amountA >= amountAMin, "Low A");
+        require(amountB >= amountBMin, "Low B");
+        require(liquidity > 0, "Zero liquidity");
+
+        IERC20(tokenAAddres).safeTransferFrom(msg.sender, address(this), amountA);
+        IERC20(tokenBAddres).safeTransferFrom(msg.sender, address(this), amountB);
+
+        reserveA += amountA;
+        reserveB += amountB;
+        _mint(to, liquidity);
+    }
+//
         emit LiquidityAdded(amountA, amountB);
     }
 
@@ -133,12 +178,16 @@ contract SimpleSwap is Ownable {
 // Retorno:
 // price: Precio de tokenA en términos de tokenB.
 
-    function getPrice(address _token) external view returns (uint256) {
-        require(_token == address(tokenA) || _token == address(tokenB), "Invalid token");
+    function getPrice(address tokenA, address tokenB) external view returns (uint price) {
+        uint reserveA = IERC20(tokenA).balanceOf(address(this));
+        uint reserveB = IERC20(tokenB).balanceOf(address(this));
 
-        return _token == address(tokenA)
-            ? (tokenB.balanceOf(address(this)) * 1e18) / tokenA.balanceOf(address(this))
-            : (tokenA.balanceOf(address(this)) * 1e18) / tokenB.balanceOf(address(this));
+        // check for liquidity and calculate the price
+        if (reserveA > 0 && reserveB > 0) {
+            price = reserveB / reserveA * 1e18;
+        } else {
+            revert INSUFFICIENT_LIQUIDITY();
+        }
     }
 
 // 5️⃣Calcular Cantidad a Recibir (getAmountOut)
@@ -153,6 +202,11 @@ contract SimpleSwap is Ownable {
 // amountOut: Cantidad de tokens a recibir.
 
     function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) external pure returns (uint amountOut) {
-        return (amountIn * reserveOut) / (reserveIn + amountIn);
+        
+        require(amountIn > 0 && reserveIn > 0 && reserveOut > 0, "Bad values of reserves")
+
+        amountOut = (amountIn * reserveOut) / (reserveIn + amountIn);
+                
+
     }
 }
